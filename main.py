@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 st.set_page_config(page_title="Portfolio Tracker", layout="wide")
 
+# ================= CONSTANTS =================
 NIFTY_500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 BENCHMARK = "^NSEI"
 
@@ -13,7 +14,7 @@ PERIOD_MAP = {"5D":5,"1M":21,"6M":126,"1Y":252,"3Y":756}
 MONTHS = ["January","February","March","April","May","June",
           "July","August","September","October","November","December"]
 
-# ---------- Dark UI ----------
+# ================= DARK UI =================
 st.markdown("""
 <style>
 .card{background:#161a23;border-radius:14px;padding:18px;margin-bottom:18px;
@@ -25,6 +26,7 @@ box-shadow:0 6px 20px rgba(0,0,0,0.35)}
 </style>
 """, unsafe_allow_html=True)
 
+# ================= DATA =================
 @st.cache_data
 def load_nifty_500():
     df = pd.read_csv(NIFTY_500_URL)
@@ -36,6 +38,7 @@ NIFTY_500 = load_nifty_500()
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
+# ================= HELPERS =================
 def fetch_cmp(symbol):
     df = yf.download(symbol, period="2d", progress=False)
     return None if df.empty else float(df["Close"].iloc[-1])
@@ -44,40 +47,25 @@ def fetch_history(symbol, start, end):
     df = yf.download(symbol, start=start, end=end, progress=False)
     return None if df.empty else df["Close"]
 
+# ================= HEADER =================
 st.markdown("## 📈 Portfolio Tracker")
 
 # ================= ADD STOCK =================
 with st.expander("➕ Add Stock", expanded=False):
 
-    stock = st.selectbox(
-        "Stock",
-        [""] + list(NIFTY_500.keys()),
-        key="stock_select"
-    )
+    stock = st.selectbox("Stock", [""] + list(NIFTY_500.keys()), key="stock")
     symbol = NIFTY_500.get(stock)
 
-    qty = st.number_input(
-        "Quantity",
-        min_value=1,
-        step=1,
-        key="qty_input"
-    )
+    qty = st.number_input("Quantity", min_value=1, step=1, key="qty")
 
     cmp_price = fetch_cmp(symbol) if symbol else None
-    buy_price = st.number_input(
-        "Buy Price (₹)",
-        value=cmp_price or 0.0,
-        key="price_input"
-    )
+    buy_price = st.number_input("Buy Price (₹)", value=cmp_price or 0.0, key="price")
 
     today = date.today()
     d = st.selectbox("Day", list(range(1,32)), index=today.day-1)
     m = st.selectbox("Month", MONTHS, index=today.month-1)
-    y = st.selectbox(
-        "Year",
-        list(range(2022, today.year+1)),
-        index=len(range(2022, today.year+1))-1
-    )
+    y = st.selectbox("Year", list(range(2022,today.year+1)),
+                     index=len(range(2022,today.year+1))-1)
 
     if st.button("Add to Portfolio", use_container_width=True):
         if stock and buy_price > 0:
@@ -88,9 +76,9 @@ with st.expander("➕ Add Stock", expanded=False):
                 "Buy Price": float(buy_price),
                 "Buy Date": date(y, MONTHS.index(m)+1, d)
             })
-            st.success(f"{stock} added to portfolio")
-            st.experimental_rerun()   # 🔐 CORRECT RESET
+            st.experimental_rerun()
 
+# ================= STOP IF EMPTY =================
 if not st.session_state.portfolio:
     st.info("Add a stock to start tracking.")
     st.stop()
@@ -103,6 +91,7 @@ earliest_buy = min(s["Buy Date"] for s in st.session_state.portfolio)
 start = pd.Timestamp(max(earliest_buy, today - timedelta(days=PERIOD_MAP[period]*2)))
 end = pd.Timestamp(today)
 
+# ================= ENGINE =================
 nifty = fetch_history(BENCHMARK, start, end)
 if nifty is None or len(nifty) < 2:
     st.warning("NIFTY data not available.")
@@ -142,18 +131,15 @@ if len(portfolio_value) < 2:
     st.warning("Not enough aligned market data.")
     st.stop()
 
-base_value = portfolio_value.iloc[0]
-port_ret = (portfolio_value/base_value - 1)*100
-
-nifty = nifty.reindex(portfolio_value.index).ffill()
-nifty_ret = (nifty/nifty.iloc[0] - 1)*100
-nifty_last = float(nifty_ret.iloc[-1])
-
 # ================= KPIs =================
 pl_total = portfolio_value.iloc[-1] - invested_total
 pl_pct = (portfolio_value.iloc[-1]/invested_total - 1)*100
 day_change = portfolio_value.iloc[-1] - portfolio_value.iloc[-2]
 day_pct = (portfolio_value.iloc[-1]/portfolio_value.iloc[-2] - 1)*100
+
+nifty = nifty.reindex(portfolio_value.index).ffill()
+nifty_ret = (nifty/nifty.iloc[0] - 1)*100
+nifty_last = float(nifty_ret.iloc[-1])
 
 st.markdown('<div class="card">', unsafe_allow_html=True)
 c1,c2,c3,c4 = st.columns(4)
@@ -165,23 +151,31 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 # ================= CHART =================
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=port_ret.index,y=port_ret,name="Portfolio %",line=dict(width=3)))
-fig.add_trace(go.Scatter(x=nifty_ret.index,y=nifty_ret,name="NIFTY %",line=dict(dash="dash")))
-fig.update_layout(template="plotly_dark",hovermode="x unified",height=450)
+fig.add_trace(go.Scatter(x=portfolio_value.index, y=(portfolio_value/portfolio_value.iloc[0]-1)*100,
+                         name="Portfolio %", line=dict(width=3)))
+fig.add_trace(go.Scatter(x=nifty_ret.index, y=nifty_ret, name="NIFTY %",
+                         line=dict(dash="dash")))
+fig.update_layout(template="plotly_dark", hovermode="x unified", height=450)
 st.plotly_chart(fig, use_container_width=True)
 
-# ================= TABLE =================
+# ================= TABLE (STREAMLIT NATIVE) =================
 df = pd.DataFrame(rows, columns=[
     "Stock","Qty","Buy Price","CMP","Invested","Current","P/L","P/L %"
 ])
 
 st.markdown('<div class="card">', unsafe_allow_html=True)
-st.dataframe(df.style.format({
-    "Buy Price":"₹{:.2f}",
-    "CMP":"₹{:.2f}",
-    "Invested":"₹{:,.0f}",
-    "Current":"₹{:,.0f}",
-    "P/L":"₹{:,.0f}",
-    "P/L %":"{:.2f}%"
-}), use_container_width=True)
+st.markdown("### 📋 Portfolio")
+
+st.dataframe(
+    df,
+    use_container_width=True,
+    column_config={
+        "Buy Price": st.column_config.NumberColumn("Buy Price (₹)", format="₹%.2f"),
+        "CMP": st.column_config.NumberColumn("CMP (₹)", format="₹%.2f"),
+        "Invested": st.column_config.NumberColumn("Invested (₹)", format="₹%,.0f"),
+        "Current": st.column_config.NumberColumn("Current Value (₹)", format="₹%,.0f"),
+        "P/L": st.column_config.NumberColumn("P/L (₹)", format="₹%,.0f"),
+        "P/L %": st.column_config.NumberColumn("P/L %", format="%.2f%%"),
+    }
+)
 st.markdown('</div>', unsafe_allow_html=True)
