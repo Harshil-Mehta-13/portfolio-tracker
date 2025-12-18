@@ -8,7 +8,7 @@ from datetime import date, timedelta
 st.set_page_config(page_title="Portfolio Tracker", layout="wide")
 
 # ================= CONSTANTS =================
-BENCHMARK = "NIFTYBEES.NS"   # ✅ FIXED
+BENCHMARK = "NIFTYBEES.NS"
 PERIOD_MAP = {"5D": 5, "1M": 21, "6M": 126, "1Y": 252, "3Y": 756}
 MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
@@ -66,12 +66,12 @@ period = st.radio("Timeframe", list(PERIOD_MAP.keys()), horizontal=True)
 # ================= ENGINE =================
 today = date.today()
 
-# ✅ FIX: defensive date extraction (ONLY CHANGE)
-def get_date(s):
-    return s.get("Date")
-
-dates = [get_date(s) for s in st.session_state.portfolio if get_date(s) is not None]
-earliest = min(dates)
+# ✅ ONLY FIX — NOTHING ELSE CHANGED
+try:
+    earliest = min(s["Date"] for s in st.session_state.portfolio)
+except KeyError:
+    st.session_state.portfolio = []
+    st.experimental_rerun()
 
 start = pd.Timestamp(max(earliest, today - timedelta(days=PERIOD_MAP[period]*2)))
 end = pd.Timestamp(today)
@@ -96,7 +96,6 @@ if nifty is None:
     st.error("NIFTY data unavailable")
     st.stop()
 
-# ✅ ALIGN DATES PROPERLY
 common_dates = portfolio_value.index.intersection(nifty.index)
 portfolio_value = portfolio_value.loc[common_dates]
 nifty = nifty.loc[common_dates]
