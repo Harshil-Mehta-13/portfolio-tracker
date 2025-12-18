@@ -76,7 +76,7 @@ with st.expander("➕ Add Stock", expanded=False):
                 "Buy Price": float(buy_price),
                 "Buy Date": date(y, MONTHS.index(m)+1, d)
             })
-            st.experimental_rerun()
+            st.rerun()   # ✅ FIXED
 
 # ================= STOP IF EMPTY =================
 if not st.session_state.portfolio:
@@ -151,21 +151,28 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 # ================= CHART =================
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=portfolio_value.index, y=(portfolio_value/portfolio_value.iloc[0]-1)*100,
-                         name="Portfolio %", line=dict(width=3)))
-fig.add_trace(go.Scatter(x=nifty_ret.index, y=nifty_ret, name="NIFTY %",
-                         line=dict(dash="dash")))
+fig.add_trace(go.Scatter(
+    x=portfolio_value.index,
+    y=(portfolio_value/portfolio_value.iloc[0]-1)*100,
+    name="Portfolio %",
+    line=dict(width=3)
+))
+fig.add_trace(go.Scatter(
+    x=nifty_ret.index,
+    y=nifty_ret,
+    name="NIFTY %",
+    line=dict(dash="dash")
+))
 fig.update_layout(template="plotly_dark", hovermode="x unified", height=450)
 st.plotly_chart(fig, use_container_width=True)
 
-# ================= TABLE (STREAMLIT NATIVE) =================
+# ================= TABLE =================
 df = pd.DataFrame(rows, columns=[
     "Stock","Qty","Buy Price","CMP","Invested","Current","P/L","P/L %"
 ])
 
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown("### 📋 Portfolio")
-
 st.dataframe(
     df,
     use_container_width=True,
