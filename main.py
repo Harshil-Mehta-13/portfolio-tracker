@@ -12,7 +12,7 @@ NIFTY_500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.
 PERIOD_MAP = {"5D":5,"1M":21,"6M":126,"1Y":252,"3Y":756}
 MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
-# ================= UI STYLE =================
+# ================= STYLE =================
 st.markdown("""
 <style>
 .card {background:#161a23;border-radius:14px;padding:18px;margin-bottom:18px;
@@ -37,14 +37,11 @@ NIFTY_500 = load_nifty500()
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-if "add_mode" not in st.session_state:
-    st.session_state.add_mode = True
-
 # ================= HELPERS =================
-def fetch_price(symbol, period="2d"):
+def fetch_price(symbol):
     if not symbol:
         return None
-    df = yf.download(symbol, period=period, progress=False)
+    df = yf.download(symbol, period="2d", progress=False)
     return None if df.empty else float(df["Close"].iloc[-1])
 
 def fetch_series(symbol, start, end):
@@ -54,7 +51,7 @@ def fetch_series(symbol, start, end):
 # ================= HEADER =================
 st.markdown("## 📈 Portfolio Tracker")
 
-# ================= PORTFOLIO ENGINE =================
+# ================= ENGINE =================
 if st.session_state.portfolio:
 
     period = st.radio("Timeframe", list(PERIOD_MAP.keys()), horizontal=True)
@@ -103,16 +100,15 @@ if st.session_state.portfolio:
         invested_total += invested
 
     portfolio_value = pd.concat(portfolio_series, axis=1).sum(axis=1).dropna()
-
     if len(portfolio_value) < 2:
         st.warning("Not enough aligned data")
         st.stop()
 
-    # Align benchmark properly (THIS FIXES NIFTY CHART)
     nifty = nifty.reindex(portfolio_value.index).ffill()
 
     port_ret = (portfolio_value / portfolio_value.iloc[0] - 1) * 100
     nifty_ret = (nifty / nifty.iloc[0] - 1) * 100
+    nifty_last = float(nifty_ret.iloc[-1])  # ✅ FIX
 
     # ================= KPIs =================
     pl = portfolio_value.iloc[-1] - invested_total
@@ -125,7 +121,12 @@ if st.session_state.portfolio:
     c1.markdown(f'<div class="kpi">₹{portfolio_value.iloc[-1]:,.0f}</div><div class="kpi-label">Portfolio</div>', unsafe_allow_html=True)
     c2.markdown(f'<div class="kpi {"green" if pl>=0 else "red"}">₹{pl:,.0f}</div><div class="kpi-label">Total P/L ({pl_pct:.2f}%)</div>', unsafe_allow_html=True)
     c3.markdown(f'<div class="kpi {"green" if day_pl>=0 else "red"}">₹{day_pl:,.0f}</div><div class="kpi-label">1D ({day_pct:.2f}%)</div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="kpi">{"+" if nifty_ret.iloc[-1]>=0 else ""}{nifty_ret.iloc[-1]:.2f}%</div><div class="kpi-label">NIFTY</div>', unsafe_allow_html=True)
+    c4.markdown(
+        f'<div class="kpi {"green" if nifty_last>=0 else "red"}">'
+        f'{"+" if nifty_last>=0 else ""}{nifty_last:.2f}%</div>'
+        f'<div class="kpi-label">NIFTY</div>',
+        unsafe_allow_html=True
+    )
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ================= CHART =================
@@ -155,21 +156,21 @@ if st.session_state.portfolio:
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ================= ADD STOCK (BOTTOM, CLEAN UX) =================
+# ================= ADD STOCK (BOTTOM) =================
 st.markdown("---")
 st.markdown("### ➕ Add Stock")
 
 c1,c2,c3 = st.columns(3)
 with c1:
-    stock = st.selectbox("Stock", [""] + list(NIFTY_500.keys()), key="new_stock")
+    stock = st.selectbox("Stock", [""] + list(NIFTY_500.keys()))
     symbol = NIFTY_500.get(stock)
 
 with c2:
-    qty = st.number_input("Quantity", min_value=1, step=1, key="new_qty")
+    qty = st.number_input("Quantity", min_value=1, step=1)
 
 with c3:
     cmp_price = fetch_price(symbol)
-    buy_price = st.number_input("Buy Price (₹)", value=cmp_price or 0.0, key="new_price")
+    buy_price = st.number_input("Buy Price (₹)", value=cmp_price or 0.0)
 
 d1,d2,d3 = st.columns(3)
 today = date.today()
