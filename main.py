@@ -46,23 +46,40 @@ def fetch_history(symbol, start, end):
 
 st.markdown("## 📈 Portfolio Tracker")
 
-# ---------- ADD STOCK ----------
+# ================= ADD STOCK =================
 with st.expander("➕ Add Stock", expanded=False):
-    stock = st.selectbox("Stock", [""] + list(NIFTY_500.keys()), key="stock")
+
+    stock = st.selectbox(
+        "Stock",
+        [""] + list(NIFTY_500.keys()),
+        key="stock_select"
+    )
     symbol = NIFTY_500.get(stock)
 
-    qty = st.number_input("Quantity", min_value=1, step=1, key="qty")
+    qty = st.number_input(
+        "Quantity",
+        min_value=1,
+        step=1,
+        key="qty_input"
+    )
 
     cmp_price = fetch_cmp(symbol) if symbol else None
-    buy_price = st.number_input("Buy Price (₹)", value=cmp_price or 0.0, key="price")
+    buy_price = st.number_input(
+        "Buy Price (₹)",
+        value=cmp_price or 0.0,
+        key="price_input"
+    )
 
     today = date.today()
     d = st.selectbox("Day", list(range(1,32)), index=today.day-1)
     m = st.selectbox("Month", MONTHS, index=today.month-1)
-    y = st.selectbox("Year", list(range(2022,today.year+1)),
-                     index=len(range(2022,today.year+1))-1)
+    y = st.selectbox(
+        "Year",
+        list(range(2022, today.year+1)),
+        index=len(range(2022, today.year+1))-1
+    )
 
-    if st.button("Add to Portfolio"):
+    if st.button("Add to Portfolio", use_container_width=True):
         if stock and buy_price > 0:
             st.session_state.portfolio.append({
                 "Stock": stock,
@@ -71,15 +88,14 @@ with st.expander("➕ Add Stock", expanded=False):
                 "Buy Price": float(buy_price),
                 "Buy Date": date(y, MONTHS.index(m)+1, d)
             })
-            st.session_state.stock = ""
-            st.session_state.qty = 1
-            st.session_state.price = 0.0
-            st.success(f"{stock} added")
+            st.success(f"{stock} added to portfolio")
+            st.experimental_rerun()   # 🔐 CORRECT RESET
 
 if not st.session_state.portfolio:
     st.info("Add a stock to start tracking.")
     st.stop()
 
+# ================= TIMEFRAME =================
 period = st.radio("Timeframe", list(PERIOD_MAP.keys()), horizontal=True)
 
 today = date.today()
@@ -131,13 +147,13 @@ port_ret = (portfolio_value/base_value - 1)*100
 
 nifty = nifty.reindex(portfolio_value.index).ffill()
 nifty_ret = (nifty/nifty.iloc[0] - 1)*100
+nifty_last = float(nifty_ret.iloc[-1])
 
-# ---------- KPIs ----------
+# ================= KPIs =================
 pl_total = portfolio_value.iloc[-1] - invested_total
 pl_pct = (portfolio_value.iloc[-1]/invested_total - 1)*100
 day_change = portfolio_value.iloc[-1] - portfolio_value.iloc[-2]
 day_pct = (portfolio_value.iloc[-1]/portfolio_value.iloc[-2] - 1)*100
-nifty_last = float(nifty_ret.iloc[-1])   # 🔐 FIX
 
 st.markdown('<div class="card">', unsafe_allow_html=True)
 c1,c2,c3,c4 = st.columns(4)
@@ -147,14 +163,14 @@ c3.markdown(f'<div class="kpi {"green" if day_change>=0 else "red"}">₹{day_cha
 c4.markdown(f'<div class="kpi {"green" if nifty_last>=0 else "red"}">{nifty_last:.2f}%</div><div class="kpi-label">NIFTY</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------- CHART ----------
+# ================= CHART =================
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=port_ret.index,y=port_ret,name="Portfolio %",line=dict(width=3)))
 fig.add_trace(go.Scatter(x=nifty_ret.index,y=nifty_ret,name="NIFTY %",line=dict(dash="dash")))
 fig.update_layout(template="plotly_dark",hovermode="x unified",height=450)
 st.plotly_chart(fig, use_container_width=True)
 
-# ---------- TABLE ----------
+# ================= TABLE =================
 df = pd.DataFrame(rows, columns=[
     "Stock","Qty","Buy Price","CMP","Invested","Current","P/L","P/L %"
 ])
