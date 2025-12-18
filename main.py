@@ -1,17 +1,17 @@
-import streamlit as st
+    import streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
 from datetime import date, timedelta
 
-# ================== PAGE CONFIG ==================
+# ================= PAGE CONFIG =================
 st.set_page_config(
     page_title="Portfolio Tracker",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ================== CONSTANTS ==================
+# ================= CONSTANTS =================
 NIFTY_500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 BENCHMARK = "^NSEI"
 
@@ -28,7 +28,7 @@ MONTHS = [
     "July","August","September","October","November","December"
 ]
 
-# ================== LOAD DATA ==================
+# ================= DATA =================
 @st.cache_data
 def load_nifty_500():
     df = pd.read_csv(NIFTY_500_URL)
@@ -37,14 +37,14 @@ def load_nifty_500():
 
 NIFTY_500 = load_nifty_500()
 
-# ================== SESSION STATE ==================
+# ================= SESSION =================
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 
-# ================== HELPERS ==================
+# ================= HELPERS =================
 def fetch_cmp(symbol):
     df = yf.download(symbol, period="2d", progress=False)
     if df.empty:
@@ -57,14 +57,14 @@ def fetch_history(symbol, start, end):
         return None
     return df["Close"]
 
-# ================== HEADER ==================
+# ================= HEADER =================
 col1, col2 = st.columns([6,1])
 with col1:
     st.markdown("## 📈 Portfolio Tracker")
 with col2:
     st.session_state.dark_mode = st.toggle("🌙", value=st.session_state.dark_mode)
 
-# ================== ADD STOCK ==================
+# ================= ADD STOCK =================
 with st.expander("➕ Add Stock", expanded=False):
     c1, c2, c3, c4 = st.columns([4,1,2,2])
 
@@ -93,35 +93,38 @@ with st.expander("➕ Add Stock", expanded=False):
     with c4:
         d = st.selectbox("Day", list(range(1,32)), index=today.day-1)
         m = st.selectbox("Month", MONTHS, index=today.month-1)
-        y = st.selectbox("Year", list(range(2022, today.year+1)),
-                         index=len(range(2022, today.year+1))-1)
+        y = st.selectbox(
+            "Year",
+            list(range(2022, today.year+1)),
+            index=len(range(2022, today.year+1))-1
+        )
 
     if st.button("Add to Portfolio", use_container_width=True):
         if stock and buy_price > 0:
             st.session_state.portfolio.append({
                 "Stock": stock,
                 "Symbol": symbol,
-                "Qty": qty,
-                "Buy Price": buy_price,
+                "Qty": int(qty),
+                "Buy Price": float(buy_price),
                 "Buy Date": date(y, MONTHS.index(m)+1, d)
             })
             st.success(f"{stock} added to portfolio")
         else:
             st.warning("Please select a stock and valid buy price")
 
-# ================== STOP IF EMPTY ==================
+# ================= STOP IF EMPTY =================
 if not st.session_state.portfolio:
     st.info("Add a stock to start tracking your portfolio.")
     st.stop()
 
-# ================== TIMEFRAME ==================
+# ================= TIMEFRAME =================
 period = st.radio(
     "Timeframe",
     options=list(PERIOD_MAP.keys()),
     horizontal=True
 )
 
-# ================== ENGINE ==================
+# ================= ENGINE =================
 today = date.today()
 earliest_buy = min(s["Buy Date"] for s in st.session_state.portfolio)
 start_date = max(earliest_buy, today - timedelta(days=PERIOD_MAP[period]*2))
@@ -129,14 +132,16 @@ start_date = max(earliest_buy, today - timedelta(days=PERIOD_MAP[period]*2))
 start = pd.Timestamp(start_date)
 end = pd.Timestamp(today)
 
+# Fetch benchmark
 nifty = fetch_history(BENCHMARK, start, end)
 if nifty is None or len(nifty) < 2:
-    st.error("Benchmark data not available")
+    st.error("Benchmark data not available.")
     st.stop()
 
 dates = nifty.index
-portfolio_value = pd.Series(0.0, index=dates)
 
+# 🔐 BUILD PORTFOLIO VALUE SAFELY
+value_series = []
 rows = []
 invested_total = 0.0
 
@@ -148,7 +153,7 @@ for s in st.session_state.portfolio:
 
     close = close.reindex(dates).ffill().dropna()
     if len(close) < 2:
-        st.error(f"Not enough data for {s['Stock']}")
+        st.warning(f"Not enough market data yet for {s['Stock']}")
         st.stop()
 
     qty = s["Qty"]
@@ -156,7 +161,6 @@ for s in st.session_state.portfolio:
 
     invested = qty * buy
     current = qty * close.iloc[-1]
-
     day_pl = qty * (close.iloc[-1] - close.iloc[-2])
     day_pct = (close.iloc[-1] / close.iloc[-2] - 1) * 100
 
@@ -168,18 +172,24 @@ for s in st.session_state.portfolio:
         day_pl, day_pct
     ])
 
-    # 🔥 FIX: NO INPLACE OPERATION
-    portfolio_value = portfolio_value + (close * qty)
+    value_series.append(close * qty)
     invested_total += invested
 
+# 🔐 ALIGN & SUM
+portfolio_value = pd.concat(value_series, axis=1).sum(axis=1)
 portfolio_value = portfolio_value.dropna()
+
+if len(portfolio_value) < 2:
+    st.warning("Not enough aligned market data to compute portfolio performance yet.")
+    st.stop()
+
 base_value = portfolio_value.iloc[0]
 
 port_ret = (portfolio_value / base_value - 1) * 100
 nifty = nifty.reindex(portfolio_value.index).ffill()
 nifty_ret = (nifty / nifty.iloc[0] - 1) * 100
 
-# ================== KPIs ==================
+# ================= KPIs =================
 c1, c2, c3, c4 = st.columns(4)
 
 c1.metric("Portfolio Value", f"₹{portfolio_value.iloc[-1]:,.0f}")
@@ -195,7 +205,7 @@ c3.metric(
 )
 c4.metric("NIFTY", f"{nifty_ret.iloc[-1]:.2f}%")
 
-# ================== CHART ==================
+# ================= CHART =================
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
@@ -221,7 +231,7 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ================== TABLES ==================
+# ================= TABLES =================
 table = pd.DataFrame(rows, columns=[
     "Stock","Qty","Buy Price","CMP",
     "Invested","Current",
