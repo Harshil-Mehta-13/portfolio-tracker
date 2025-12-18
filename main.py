@@ -4,55 +4,27 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import date, timedelta
 
-# ================= PAGE CONFIG =================
-st.set_page_config(
-    page_title="Portfolio Tracker",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Portfolio Tracker", layout="wide")
 
-# ================= CONSTANTS =================
 NIFTY_500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 BENCHMARK = "^NSEI"
 
-PERIOD_MAP = {
-    "5D": 5,
-    "1M": 21,
-    "6M": 126,
-    "1Y": 252,
-    "3Y": 756
-}
+PERIOD_MAP = {"5D":5,"1M":21,"6M":126,"1Y":252,"3Y":756}
+MONTHS = ["January","February","March","April","May","June",
+          "July","August","September","October","November","December"]
 
-MONTHS = [
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December"
-]
-
-# ================= DARK THEME =================
+# ---------- Dark UI ----------
 st.markdown("""
 <style>
-body { background-color:#0f1117; }
-.card {
-    background:#161a23;
-    border-radius:14px;
-    padding:18px;
-    margin-bottom:18px;
-    box-shadow:0 6px 20px rgba(0,0,0,0.35);
-}
-.kpi {
-    font-size:28px;
-    font-weight:700;
-}
-.kpi-label {
-    color:#9aa4b2;
-    font-size:13px;
-}
-.green { color:#00c853; }
-.red { color:#ff5252; }
+.card{background:#161a23;border-radius:14px;padding:18px;margin-bottom:18px;
+box-shadow:0 6px 20px rgba(0,0,0,0.35)}
+.kpi{font-size:28px;font-weight:700}
+.kpi-label{color:#9aa4b2;font-size:13px}
+.green{color:#00c853}
+.red{color:#ff5252}
 </style>
 """, unsafe_allow_html=True)
 
-# ================= DATA =================
 @st.cache_data
 def load_nifty_500():
     df = pd.read_csv(NIFTY_500_URL)
@@ -61,11 +33,9 @@ def load_nifty_500():
 
 NIFTY_500 = load_nifty_500()
 
-# ================= SESSION =================
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-# ================= HELPERS =================
 def fetch_cmp(symbol):
     df = yf.download(symbol, period="2d", progress=False)
     return None if df.empty else float(df["Close"].iloc[-1])
@@ -74,154 +44,25 @@ def fetch_history(symbol, start, end):
     df = yf.download(symbol, start=start, end=end, progress=False)
     return None if df.empty else df["Close"]
 
-# ================= HEADER =================
 st.markdown("## 📈 Portfolio Tracker")
 
-# ================= STOP IF EMPTY =================
-if not st.session_state.portfolio:
-    st.info("Add a stock to start tracking your portfolio.")
-
-# ================= TIMEFRAME =================
-period = st.radio(
-    "Timeframe",
-    options=list(PERIOD_MAP.keys()),
-    horizontal=True
-)
-
-# ================= ENGINE =================
-if st.session_state.portfolio:
-
-    today = date.today()
-    earliest_buy = min(s["Buy Date"] for s in st.session_state.portfolio)
-    start_date = max(earliest_buy, today - timedelta(days=PERIOD_MAP[period]*2))
-
-    start = pd.Timestamp(start_date)
-    end = pd.Timestamp(today)
-
-    nifty = fetch_history(BENCHMARK, start, end)
-    if nifty is None or len(nifty) < 2:
-        st.warning("NIFTY data not available.")
-        st.stop()
-
-    dates = nifty.index
-    value_series = []
-    rows = []
-    invested_total = 0.0
-
-    for s in st.session_state.portfolio:
-        close = fetch_history(s["Symbol"], start, end)
-        if close is None:
-            st.warning(f"Data not available for {s['Stock']}")
-            st.stop()
-
-        close = close.reindex(dates).ffill().dropna()
-        if len(close) < 2:
-            st.warning(f"Not enough data yet for {s['Stock']}")
-            st.stop()
-
-        qty = s["Qty"]
-        buy = s["Buy Price"]
-
-        invested = qty * buy
-        current = qty * close.iloc[-1]
-        day_pl = qty * (close.iloc[-1] - close.iloc[-2])
-        day_pct = (close.iloc[-1] / close.iloc[-2] - 1) * 100
-
-        rows.append([
-            s["Stock"], qty, buy, close.iloc[-1],
-            invested, current,
-            current - invested,
-            (current / invested - 1) * 100,
-            day_pl, day_pct
-        ])
-
-        value_series.append(close * qty)
-        invested_total += invested
-
-    portfolio_value = pd.concat(value_series, axis=1).sum(axis=1).dropna()
-
-    if len(portfolio_value) < 2:
-        st.warning("Not enough aligned market data yet.")
-        st.stop()
-
-    base_value = portfolio_value.iloc[0]
-
-    port_ret = (portfolio_value / base_value - 1) * 100
-    nifty = nifty.reindex(portfolio_value.index).ffill()
-    nifty_ret = (nifty / nifty.iloc[0] - 1) * 100
-
-    # ================= KPIs =================
-    pl_total = portfolio_value.iloc[-1] - invested_total
-    pl_pct = (portfolio_value.iloc[-1] / invested_total - 1) * 100
-    day_change = portfolio_value.iloc[-1] - portfolio_value.iloc[-2]
-    day_pct = (portfolio_value.iloc[-1] / portfolio_value.iloc[-2] - 1) * 100
-
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    c1,c2,c3,c4 = st.columns(4)
-    c1.markdown(f'<div class="kpi">₹{portfolio_value.iloc[-1]:,.0f}</div><div class="kpi-label">Portfolio Value</div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="kpi {"green" if pl_total>=0 else "red"}">₹{pl_total:,.0f}</div><div class="kpi-label">Total P/L ({pl_pct:.2f}%)</div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="kpi {"green" if day_change>=0 else "red"}">₹{day_change:,.0f}</div><div class="kpi-label">1D Change ({day_pct:.2f}%)</div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="kpi">{"+" if nifty_ret.iloc[-1]>=0 else ""}{nifty_ret.iloc[-1]:.2f}%</div><div class="kpi-label">NIFTY</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ================= CHART =================
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=port_ret.index, y=port_ret, name="Portfolio %", line=dict(width=3)))
-    fig.add_trace(go.Scatter(x=nifty_ret.index, y=nifty_ret, name="NIFTY %", line=dict(width=2, dash="dash")))
-    fig.update_layout(
-        template="plotly_dark",
-        hovermode="x unified",
-        xaxis=dict(showspikes=True, spikemode="across"),
-        yaxis_title="% Return",
-        height=450
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ================= TABLE =================
-    table = pd.DataFrame(rows, columns=[
-        "Stock","Qty","Buy Price","CMP",
-        "Invested","Current",
-        "Total P/L","Total P/L %",
-        "1D P/L","1D %"
-    ])
-
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("### 📋 Portfolio")
-    st.dataframe(
-        table.style.format({
-            "Buy Price":"₹{:.2f}",
-            "CMP":"₹{:.2f}",
-            "Invested":"₹{:,.0f}",
-            "Current":"₹{:,.0f}",
-            "Total P/L":"₹{:,.0f}",
-            "Total P/L %":"{:.2f}%",
-            "1D P/L":"₹{:,.0f}",
-            "1D %":"{:.2f}%"
-        }),
-        use_container_width=True
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ================= ADD STOCK (BOTTOM) =================
-st.markdown("---")
+# ---------- ADD STOCK ----------
 with st.expander("➕ Add Stock", expanded=False):
-
-    stock = st.selectbox("Stock", [""] + list(NIFTY_500.keys()), key="stock_sel")
+    stock = st.selectbox("Stock", [""] + list(NIFTY_500.keys()), key="stock")
     symbol = NIFTY_500.get(stock)
 
-    qty = st.number_input("Quantity", min_value=1, step=1, key="qty_in")
+    qty = st.number_input("Quantity", min_value=1, step=1, key="qty")
 
     cmp_price = fetch_cmp(symbol) if symbol else None
-    buy_price = st.number_input("Buy Price (₹)", value=cmp_price or 0.0, key="price_in")
+    buy_price = st.number_input("Buy Price (₹)", value=cmp_price or 0.0, key="price")
 
     today = date.today()
-    d = st.selectbox("Day", list(range(1,32)), index=today.day-1, key="d")
-    m = st.selectbox("Month", MONTHS, index=today.month-1, key="m")
-    y = st.selectbox("Year", list(range(2022, today.year+1)), index=len(range(2022, today.year+1))-1, key="y")
+    d = st.selectbox("Day", list(range(1,32)), index=today.day-1)
+    m = st.selectbox("Month", MONTHS, index=today.month-1)
+    y = st.selectbox("Year", list(range(2022,today.year+1)),
+                     index=len(range(2022,today.year+1))-1)
 
-    if st.button("Add to Portfolio", use_container_width=True):
+    if st.button("Add to Portfolio"):
         if stock and buy_price > 0:
             st.session_state.portfolio.append({
                 "Stock": stock,
@@ -230,9 +71,101 @@ with st.expander("➕ Add Stock", expanded=False):
                 "Buy Price": float(buy_price),
                 "Buy Date": date(y, MONTHS.index(m)+1, d)
             })
+            st.session_state.stock = ""
+            st.session_state.qty = 1
+            st.session_state.price = 0.0
             st.success(f"{stock} added")
 
-            # RESET INPUTS
-            st.session_state.stock_sel = ""
-            st.session_state.qty_in = 1
-            st.session_state.price_in = 0.0
+if not st.session_state.portfolio:
+    st.info("Add a stock to start tracking.")
+    st.stop()
+
+period = st.radio("Timeframe", list(PERIOD_MAP.keys()), horizontal=True)
+
+today = date.today()
+earliest_buy = min(s["Buy Date"] for s in st.session_state.portfolio)
+start = pd.Timestamp(max(earliest_buy, today - timedelta(days=PERIOD_MAP[period]*2)))
+end = pd.Timestamp(today)
+
+nifty = fetch_history(BENCHMARK, start, end)
+if nifty is None or len(nifty) < 2:
+    st.warning("NIFTY data not available.")
+    st.stop()
+
+dates = nifty.index
+series_list, rows = [], []
+invested_total = 0.0
+
+for s in st.session_state.portfolio:
+    close = fetch_history(s["Symbol"], start, end)
+    if close is None:
+        st.warning(f"No data for {s['Stock']}")
+        st.stop()
+
+    close = close.reindex(dates).ffill().dropna()
+    if len(close) < 2:
+        st.warning(f"Not enough data for {s['Stock']}")
+        st.stop()
+
+    qty, buy = s["Qty"], s["Buy Price"]
+    invested = qty * buy
+    current = qty * close.iloc[-1]
+
+    rows.append([
+        s["Stock"], qty, buy, close.iloc[-1],
+        invested, current,
+        current-invested,
+        (current/invested-1)*100
+    ])
+
+    series_list.append(close * qty)
+    invested_total += invested
+
+portfolio_value = pd.concat(series_list, axis=1).sum(axis=1).dropna()
+if len(portfolio_value) < 2:
+    st.warning("Not enough aligned market data.")
+    st.stop()
+
+base_value = portfolio_value.iloc[0]
+port_ret = (portfolio_value/base_value - 1)*100
+
+nifty = nifty.reindex(portfolio_value.index).ffill()
+nifty_ret = (nifty/nifty.iloc[0] - 1)*100
+
+# ---------- KPIs ----------
+pl_total = portfolio_value.iloc[-1] - invested_total
+pl_pct = (portfolio_value.iloc[-1]/invested_total - 1)*100
+day_change = portfolio_value.iloc[-1] - portfolio_value.iloc[-2]
+day_pct = (portfolio_value.iloc[-1]/portfolio_value.iloc[-2] - 1)*100
+nifty_last = float(nifty_ret.iloc[-1])   # 🔐 FIX
+
+st.markdown('<div class="card">', unsafe_allow_html=True)
+c1,c2,c3,c4 = st.columns(4)
+c1.markdown(f'<div class="kpi">₹{portfolio_value.iloc[-1]:,.0f}</div><div class="kpi-label">Portfolio</div>', unsafe_allow_html=True)
+c2.markdown(f'<div class="kpi {"green" if pl_total>=0 else "red"}">₹{pl_total:,.0f}</div><div class="kpi-label">Total P/L ({pl_pct:.2f}%)</div>', unsafe_allow_html=True)
+c3.markdown(f'<div class="kpi {"green" if day_change>=0 else "red"}">₹{day_change:,.0f}</div><div class="kpi-label">1D ({day_pct:.2f}%)</div>', unsafe_allow_html=True)
+c4.markdown(f'<div class="kpi {"green" if nifty_last>=0 else "red"}">{nifty_last:.2f}%</div><div class="kpi-label">NIFTY</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------- CHART ----------
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=port_ret.index,y=port_ret,name="Portfolio %",line=dict(width=3)))
+fig.add_trace(go.Scatter(x=nifty_ret.index,y=nifty_ret,name="NIFTY %",line=dict(dash="dash")))
+fig.update_layout(template="plotly_dark",hovermode="x unified",height=450)
+st.plotly_chart(fig, use_container_width=True)
+
+# ---------- TABLE ----------
+df = pd.DataFrame(rows, columns=[
+    "Stock","Qty","Buy Price","CMP","Invested","Current","P/L","P/L %"
+])
+
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.dataframe(df.style.format({
+    "Buy Price":"₹{:.2f}",
+    "CMP":"₹{:.2f}",
+    "Invested":"₹{:,.0f}",
+    "Current":"₹{:,.0f}",
+    "P/L":"₹{:,.0f}",
+    "P/L %":"{:.2f}%"
+}), use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
